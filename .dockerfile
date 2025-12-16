@@ -3,30 +3,14 @@ FROM n8nio/n8n:next
 
 # Install dependencies for cloudflared
 USER root
-RUN set -eux; \
-    if command -v apt-get >/dev/null 2>&1; then \
-      apt-get update; \
-      apt-get install -y --no-install-recommends curl ca-certificates bash; \
-      rm -rf /var/lib/apt/lists/*; \
-    elif command -v apk >/dev/null 2>&1; then \
-      apk add --no-cache curl ca-certificates bash; \
-    else \
-      echo "Unsupported base image: need apt-get or apk" >&2; \
-      exit 1; \
-    fi
+RUN apk add --no-cache \
+        curl ca-certificates bash
 
 # Fetch the latest cloudflared release
-RUN set -eux; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-      x86_64) cloud_arch=amd64 ;; \
-      aarch64|arm64) cloud_arch=arm64 ;; \
-      armv7l|armv6l) cloud_arch=arm ;; \
-      *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -L "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${cloud_arch}" \
-      -o /usr/local/bin/cloudflared; \
-    chmod +x /usr/local/bin/cloudflared
+RUN curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+        -o /usr/local/bin/cloudflared \
+    && chmod +x /usr/local/bin/cloudflared
+
 
     
 RUN cat > /entrypoint.sh << 'EOF'
