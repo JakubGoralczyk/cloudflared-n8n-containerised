@@ -1,0 +1,32 @@
+# n8n + Cloudflare Tunnel
+
+Custom Docker setup to run n8n behind a Cloudflare Tunnel with TLS cert/key mounted into the container. The image installs `cloudflared`, starts the tunnel when a token is provided, and then starts n8n.
+
+## What this includes
+- Base image `n8nio/n8n:next` plus `cloudflared`
+- Custom entrypoint that runs `cloudflared tunnel --no-autoupdate run --token $TUNNEL_TOKEN` (only if the token is set) and then starts n8n as the `node` user
+- HTTPS enabled inside the container using the provided cert/key
+- n8n data persisted to the `n8n_data` Docker volume; no host ports are published (access is expected through the tunnel)
+
+## Prerequisites
+- Docker and Docker Compose v2
+- A Cloudflare Tunnel token with access to your tunnel
+- TLS certificate and key that match `N8N_HOST` (default `n8n.sadmachine.eu`)
+
+## Configuration
+Environment is read from `.env` (git-ignored). Set at least:
+- `TUNNEL_TOKEN` – Cloudflare Tunnel token
+- `CERT_FILE` / `KEY_FILE` – filenames of the cert and key placed in the repo root (e.g., `n8n.sadmachine.eu.pem` and `n8n.sadmachine.eu.key`)
+
+
+## Build and run
+1) Place your cert/key in the repo root and update `.env` accordingly.  
+2) Build the image: `docker compose build`  
+3) Start everything: `docker compose up -d`  
+4) Follow logs: `docker compose logs -f n8n`
+
+With no host ports published, access n8n through the Cloudflare Tunnel using the hostname you configured.
+
+## Persistence and cleanup
+- n8n state lives in the named volume `n8n_data`; remove with `docker volume rm n8n_n8n_data` if you want a clean slate.
+- TLS files and `.env` are git-ignored; keep them safe and out of commits.

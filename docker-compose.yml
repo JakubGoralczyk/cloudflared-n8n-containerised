@@ -1,0 +1,32 @@
+services:
+  n8n:
+    build:
+      context: .
+      dockerfile: .dockerfile
+    container_name: n8n-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - N8N_PROTOCOL=https
+      - N8N_HOST=n8n.sadmachine.eu
+      - N8N_PORT=443
+      - N8N_SSL_CERT=/etc/ssl/n8n/${CERT_FILE:-}
+      - N8N_SSL_KEY=/etc/ssl/n8n/${KEY_FILE:-}
+      - N8N_CUSTOM_EXTENSIONS=/home/node/n8n/custom
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
+      - NODE_ENV=production
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - DB_SQLITE_POOL_SIZE=5
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=true
+      - N8N_GIT_NODE_DISABLE_BARE_REPOS=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./${CERT_FILE:-}:/etc/ssl/n8n/${CERT_FILE:-}:ro
+      - ./${KEY_FILE:-}:/etc/ssl/n8n/${KEY_FILE:-}:ro
+    working_dir: /home/node/n8n
+
+volumes:
+  n8n_data:
+    driver: local
