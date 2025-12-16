@@ -1,3 +1,4 @@
 *.pem
 *.key
 *.env
+cloudflared-config.yml

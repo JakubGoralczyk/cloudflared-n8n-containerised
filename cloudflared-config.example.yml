@@ -1,0 +1,9 @@
+tunnel: ""  # set in your dashboard when using token-based tunnels
+ingress:
+  - hostname: n8n.example.com          # replace with your domain
+    service: https://n8n.example.com:443  # replace with your domain/port
+    originRequest:
+      originServerName: n8n.example.com   # replace with your domain
+      noTLSVerify: false
+      caPool: /etc/ssl/n8n/origin-ca.pem  # mounted cert/CA bundle
+  - service: http_status:404

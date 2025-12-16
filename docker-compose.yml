@@ -1,21 +1,27 @@
 services:
   n8n:
-    build:
-      context: .
-      dockerfile: .dockerfile
+    image: n8nio/n8n:next
     container_name: n8n-app
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    dns:
+      - 1.1.1.1
     env_file:
       - .env
     environment:
       - N8N_PROTOCOL=https
-      - N8N_HOST=n8n.sadmachine.eu
+      - N8N_HOST=${N8N_HOST:-n8n.example.com}
       - N8N_PORT=443
       - N8N_SSL_CERT=/etc/ssl/n8n/${CERT_FILE:-}
       - N8N_SSL_KEY=/etc/ssl/n8n/${KEY_FILE:-}
       - N8N_CUSTOM_EXTENSIONS=/home/node/n8n/custom
-      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
       - NODE_ENV=production
+      - N8N_RUNNERS_MODE=external
+      - N8N_RUNNERS_AUTH_TOKEN=${N8N_RUNNERS_AUTH_TOKEN:-}
+      - N8N_TRUSTED_PROXIES=${N8N_TRUSTED_PROXIES:-*}
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
       - DB_SQLITE_POOL_SIZE=5
       - N8N_RUNNERS_ENABLED=true
@@ -26,7 +32,94 @@ services:
       - ./${CERT_FILE:-}:/etc/ssl/n8n/${CERT_FILE:-}:ro
       - ./${KEY_FILE:-}:/etc/ssl/n8n/${KEY_FILE:-}:ro
     working_dir: /home/node/n8n
+    networks:
+      n8n_internal:
+        aliases:
+          - ${N8N_HOST:-n8n.example.com}
+      n8n_egress:
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    dns:
+      - 1.1.1.1
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run --token ${TUNNEL_TOKEN:-}
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
+    depends_on:
+      - n8n
+    volumes:
+      - ${CLOUDFLARED_CONFIG_PATH:-./cloudflared-config.yml}:/etc/cloudflared/config.yml:ro
+      - ./${CERT_FILE:-}:/etc/ssl/n8n/origin-ca.pem:ro
+    networks:
+      - n8n_internal
+      - n8n_egress
+
+  n8n-runner:
+    image: n8nio/runners:next
+    container_name: n8n-runner
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    dns:
+      - 1.1.1.1
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - N8N_RUNNERS_AUTH_TOKEN=${N8N_RUNNERS_AUTH_TOKEN:-}
+      - N8N_RUNNERS_INSTANCE_URL=${N8N_RUNNERS_INSTANCE_URL:-}
+      - N8N_RUNNERS_RUNNER_ID=runner-1
+      - N8N_RUNNERS_RUNNER_TYPE=javascript
+      - N8N_RUNNERS_MAX_CONCURRENCY=${N8N_RUNNERS_MAX_CONCURRENCY:-5}
+      - N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT=${N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT:-300}
+    command: ["javascript"]
+    depends_on:
+      - n8n
+    networks:
+      - n8n_internal
+      - n8n_egress
+
+  n8n-runner-python:
+    image: n8nio/runners:next
+    container_name: n8n-runner-python
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    dns:
+      - 1.1.1.1
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - N8N_RUNNERS_AUTH_TOKEN=${N8N_RUNNERS_AUTH_TOKEN:-}
+      - N8N_RUNNERS_INSTANCE_URL=${N8N_RUNNERS_INSTANCE_URL:-}
+      - N8N_RUNNERS_RUNNER_ID=runner-python-1
+      - N8N_RUNNERS_RUNNER_TYPE=python
+      - N8N_RUNNERS_MAX_CONCURRENCY=${N8N_RUNNERS_MAX_CONCURRENCY_PY:-2}
+      - N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT=${N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT:-300}
+    command: ["python"]
+    depends_on:
+      - n8n
+    networks:
+      - n8n_internal
+      - n8n_egress
 
 volumes:
   n8n_data:
-    driver: local
+
+networks:
+  n8n_internal:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: ${N8N_INTERNAL_SUBNET:-172.30.10.0/24}
+  n8n_egress:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${N8N_EGRESS_SUBNET:-172.30.11.0/24}

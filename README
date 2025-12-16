@@ -1,32 +1,43 @@
-# n8n + Cloudflare Tunnel
+# n8n + Cloudflare Tunnel + External Runners
 
-Custom Docker setup to run n8n behind a Cloudflare Tunnel with TLS cert/key mounted into the container. The image installs `cloudflared`, starts the tunnel when a token is provided, and then starts n8n.
+Multi-container Compose stack: `n8n` serves HTTPS with your cert/key, `cloudflared` handles the tunnel, and dedicated runner containers execute workflows. No host ports are published.
 
 ## What this includes
-- Base image `n8nio/n8n:next` plus `cloudflared`
-- Custom entrypoint that runs `cloudflared tunnel --no-autoupdate run --token $TUNNEL_TOKEN` (only if the token is set) and then starts n8n as the `node` user
-- HTTPS enabled inside the container using the provided cert/key
-- n8n data persisted to the `n8n_data` Docker volume; no host ports are published (access is expected through the tunnel)
+- `n8n` (`n8nio/n8n:next`) with your TLS cert/key mounted
+- `cloudflared` (`cloudflare/cloudflared`) using a token-based tunnel
+- External runners (`n8nio/runners:next`) for JavaScript and Python
+- Two networks: `n8n_internal` (internal: true) for ingress only; `n8n_egress` for outbound calls. No LAN exposure.
+- Named volume `n8n_data` for n8n state
 
 ## Prerequisites
 - Docker and Docker Compose v2
-- A Cloudflare Tunnel token with access to your tunnel
-- TLS certificate and key that match `N8N_HOST` (default `n8n.sadmachine.eu`)
+- Cloudflare tunnel token
+- TLS cert and key for `N8N_HOST` (provide your own domain)
 
 ## Configuration
-Environment is read from `.env` (git-ignored). Set at least:
-- `TUNNEL_TOKEN` – Cloudflare Tunnel token
-- `CERT_FILE` / `KEY_FILE` – filenames of the cert and key placed in the repo root (e.g., `n8n.sadmachine.eu.pem` and `n8n.sadmachine.eu.key`)
+`.env` (git-ignored) should define at least:
+- `TUNNEL_TOKEN`
+- `CERT_FILE` / `KEY_FILE` (filenames in repo root)
+- `N8N_HOST` (e.g., `n8n.example.com`)
+- `N8N_RUNNERS_AUTH_TOKEN` (shared secret for runners)
+- `N8N_TRUSTED_PROXIES` — set to your Docker/loopback subnets (e.g., `127.0.0.1/8,172.30.10.0/24,172.30.11.0/24`)
+- Optional: `N8N_RUNNERS_INSTANCE_URL` (defaults to `https://<your N8N_HOST>`), concurrency/timeouts, custom subnets
 
+Cloudflare ingress (set in Zero Trust dashboard, token-managed tunnel):
+- Service URL: `https://<your N8N_HOST>:443` (must be a literal value, not `${...}`)
+- Turn off “No TLS verify”; set Origin Host Header to `N8N_HOST`
 
-## Build and run
-1) Place your cert/key in the repo root and update `.env` accordingly.  
-2) Build the image: `docker compose build`  
-3) Start everything: `docker compose up -d`  
-4) Follow logs: `docker compose logs -f n8n`
+Cloudflared config file:
+- Copy `cloudflared-config.example.yml` to `cloudflared-config.yml` (git-ignored), then replace the placeholder domain/port with your actual values (no `${...}` expansions inside the file). Or supply a custom path via `CLOUDFLARED_CONFIG_PATH`.
+- The same cert is mounted as `origin-ca.pem` for verification.
 
-With no host ports published, access n8n through the Cloudflare Tunnel using the hostname you configured.
+## Run
+1) Place cert/key in repo root and populate `.env` (including runner auth token).
+2) Start: `docker compose up -d`
+3) Check logs: `docker compose logs -f cloudflared n8n n8n-runner n8n-runner-python`
 
-## Persistence and cleanup
-- n8n state lives in the named volume `n8n_data`; remove with `docker volume rm n8n_n8n_data` if you want a clean slate.
-- TLS files and `.env` are git-ignored; keep them safe and out of commits.
+## Notes
+- Ingress flows over `n8n_internal`; outbound API calls use `n8n_egress`.
+- Runners auto-shutdown when idle (configurable via `.env`).
+- No host ports are exposed; access is through the Cloudflare tunnel using `N8N_HOST`. TLS hostname must match your cert/host.
+- Trust proxy must be configured (via `N8N_TRUSTED_PROXIES`) so Express honors `X-Forwarded-For` and rate limits per client.
